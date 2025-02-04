@@ -1,0 +1,232 @@
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <title>나홀로메모장 Ver 2.0</title>
+</head>
+
+<body>
+    <div class="container-sm">
+        <div class="mb-3 mt-3 p-5 bg-light">
+            <h1>나홀로 메모장 Ver 2.0</h1>
+            <div id="card-title">
+                <div class="mb-3">
+                    <input type="text" id="memo-title" class="form-control" placeholder="제목을 입력하세요">
+                </div>
+                <div class="mb-3">
+                    <textarea class="form-control" id="memo-content" rows="3" placeholder="내용을 입력하세요"></textarea>
+                </div>
+                <div class="mb-3">
+                    <button type="submit" class="btn btn-primary mb-3" onclick="submitMemo()">저장하기</button>
+                </div>
+            </div>
+        </div>
+        <div id="card-list" class="row row-cols-1 row-cols-md-3 g-4">
+        </div>
+    </div>
+
+    <script>
+        const cardList = document.getElementById("card-list");
+
+        const memoTitle = document.getElementById("memo-title");
+        const memoContent = document.getElementById("memo-content");
+
+        let cards = [];
+        let editingCards = new Set(); // 현재 수정중인 메모의 id를 저장하는 집합
+
+        function createElementFromHTML(htmlString) {// 이 함수 모르겠음 gpt 왈 html을 동적으로 생성하는 함수라함
+            var div = document.createElement('div');
+            div.innerHTML = htmlString.trim();
+
+            // Change this to div.childNodes to support multiple top-level nodes.
+            return div.firstElementChild;
+        }
+
+        function clearCards() {//기존 카드리스트를 초기화 하는 이유는->기존에 있는 내용을 삭제하지 않으면 이전의 내용이 그대로 남아있기 때문.
+            cardList.innerHTML = "";
+        }
+
+        function addCard(card) {
+            const html = `<div class="col">
+                <div class="card">
+                    <div class="card-body">
+                        <p class="card-title">${card.title}</p>
+                        <p class="card-text">${card.text}</p>
+                        <p class="card-likes">${card.likes}</p>
+                        <div class="d-flex">
+                            <button class="edit-button btn btn-info me-2" onclick="onClickEditButton('${card._id}')">수정</button>
+                            <button class="delete-button btn btn-danger" onclick="onClickDeleteButton('${card._id}')">삭제</button>
+                            <button class="link-like btn text-primary" onclick="onClickLikeButton('${card._id}')">좋아요!<i
+                                    class="bi bi-hand-thumbs-up ms-1"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+            const elem = createElementFromHTML(html);
+            cardList.appendChild(elem);//카드리스트에 추가하여 화면에 표시(append: 마지막 위치에 추가)
+        }
+
+        function addEditingCard(card) {
+            const html = `<div class="col">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <input type="email" class="new-title form-control" placeholder="제목을 입력하세요">
+                        </div>
+                        <div class="mb-3">
+                            <textarea class="new-text form-control" rows="3"
+                                placeholder="내용을 입력하세요"></textarea>
+                        </div>
+                        <button type="submit" class="save-button btn btn-success">저장</button>
+                    </div>
+                </div>
+            </div>`;
+            const elem = createElementFromHTML(html);
+            let title = elem.querySelector(".new-title");// querySelector 이게 뭐임? ->.new-title의 dom 객체를 찾는 함수
+            let text = elem.querySelector(".new-text");
+            let saveBtn = elem.querySelector(".save-button");
+
+            title.value = card.title;
+            text.value = card.text;
+
+            saveBtn.addEventListener("click", () => { //클로져 closure
+                fetch("api/memo", {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        _id: card._id,
+                        title: title.value,
+                        text: text.value
+                    })
+                })
+                    .then(() => {
+                        alert("수정 성공");
+                        editingCards.delete(card._id);// 수정중인 카드 목록에서 제거 set(1)->set(0)
+                        reloadCards();
+                    }).catch(() => {
+                        alert("수정 실패");
+                    })
+            });
+
+            cardList.appendChild(elem);
+        }
+
+        function reloadCards() {
+            return fetch("api/memo")
+                .then(response => response.json())
+                .then(c => {//c는 response.json함수의 반환값
+                    cards = c;//c는 서버값(데이터 베이스값),cards는 클라이언트값(화면 값)
+                    // 현재 수정중인 메모 중 서버에서 가져온 값중 없는 값을 삭제
+                    let newCards = new Set();
+                    for (const newCard of c) {
+                        if (editingCards.has(newCard._id)) {
+                            newCards.add(newCard._id);
+                        }
+                    }
+                    editingCards = newCards;
+                    // serverIds = new Set(cards.map(obj => obj._id));
+                    // editingCards = editingCards.intersection(serverIds);
+                    renderCards();
+                });
+        }
+
+        function renderCards() {
+            clearCards();
+            for (const card of cards) {
+                if (editingCards.has(card._id)) {
+                    addEditingCard(card);
+                } else {
+                    addCard(card);
+                }
+            }
+        }
+
+        function onClickEditButton(cardId) {
+            if (editingCards.has(cardId)) {
+                editingCards.delete(cardId);
+            } else {
+                editingCards.add(cardId);
+            }
+            renderCards();
+        }
+
+        function onClickDeleteButton(cardId) {
+            fetch("api/memo", {
+                method: "DELETE",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    _id: cardId
+                })
+            })
+                .then(() => {
+                    alert("삭제 성공");
+                    reloadCards()
+                })
+                .catch(() => {
+                    alert("삭제 실패");
+                });
+        }
+
+        function onClickLikeButton(cardId) {
+            fetch("api/memo/increase_like", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    _id: cardId
+                })
+            })
+                .then(() => reloadCards())
+        }
+
+        function submitMemo() {
+            const title = memoTitle.value;
+            const text = memoContent.value;
+
+            if (title.trim() === "") {//trim은 공백제거
+                alert("제목을 입력하세요");
+                return;
+            }
+
+            if (text.trim() === "") {
+                alert("내용을 입력하세요");
+                return;
+            }
+
+            fetch("api/memo", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    title, text
+                })
+            })
+                .then(() => {
+                    alert("포스팅 성공");
+                    memoContent.value = "";
+                    memoTitle.value = "";
+                    reloadCards();
+                })
+                .catch(() => {
+                    alert("포스팅 실패");
+                });
+        }
+
+        reloadCards();
+    </script>
+</body>
+
+</html>
